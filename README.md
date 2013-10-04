@@ -50,15 +50,15 @@ Sample Myreplicator Yaml file
 	    ssh_host: localhost
 	    ssh_user: guest
 	    ssh_password: guest
-	    ssh_tmp_dir: /home/guest/tmp
-  
+	    export_stg_dir: /home/guest/tmp
+
 	# Sample connection using the private key
 	 remove_db_2:
 	   ssh_host: 192.168.1.230
  	   ssh_user: ubuntu
  	   ssh_db_host: 127.0.0.1
 	   ssh_private_key: ~/.ssh/team.pem
-	   ssh_tmp_dir: /home/ubuntu/myreplicator_tmp
+	   export_stg_dir: /home/ubuntu/myreplicator_tmp
 
 
 Sample Database Yaml file

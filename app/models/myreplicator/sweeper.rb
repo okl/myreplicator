@@ -17,7 +17,7 @@ module Myreplicator
       #removing files that are left in the storage for more than 12 hours
       folders = [
         "#{Myreplicator.loader_stg_path}",
-        "#{Myreplicator.configs[Myreplicator.configs.keys[1]]["ssh_tmp_dir"]}"
+        "#{Myreplicator.configs[Myreplicator.configs.keys[1]]["export_stg_dir"]}"
       ]
 
       folders.each do |folder|

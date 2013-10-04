@@ -234,7 +234,7 @@ module Myreplicator
     # Returns where path of dump files on remote server 
     ## 
     def self.export_path export, filename
-      File.join(Myreplicator.configs[export.source_schema]["ssh_tmp_dir"], filename)
+      File.join(Myreplicator.configs[export.source_schema]["export_stg_dir"], filename)
     end
 
     ##
@@ -244,7 +244,7 @@ module Myreplicator
     def self.get_done_files export
       Kernel.p "===== export ====="
       Kernel.p export
-      cmd = "cd #{Myreplicator.configs[export.source_schema]["ssh_tmp_dir"]}; grep -ls export_completed *.json"
+      cmd = "cd #{Myreplicator.configs[export.source_schema]["export_stg_dir"]}; grep -ls export_completed *.json"
       return cmd
     end
     

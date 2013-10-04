@@ -1,12 +1,12 @@
 module Myreplicator
   class MysqlExporter
-    
+
     def initialize *args
       options = args.extract_options!
     end
-    
+
     ##
-    # Gets an Export object and dumps the data 
+    # Gets an Export object and dumps the data
     # Initially using mysqldump
     # Incrementally using mysql -e afterwards
     ##
@@ -32,7 +32,7 @@ module Myreplicator
           on_export_success(metadata)
           incremental_export_into_outfile metadata
         end
-        
+
       end # metadata
     end
 
@@ -51,7 +51,7 @@ module Myreplicator
       ssh = @export_obj.ssh_to_source
       metadata.ssh = ssh
     end
-      
+
     def update_export *args
       options = args.extract_options!
       @export_obj.update_attributes! options
@@ -61,7 +61,7 @@ module Myreplicator
     # File path on remote server
     ##
     def filepath
-      File.join(Myreplicator.configs[@export_obj.source_schema]["ssh_tmp_dir"], @export_obj.filename)
+      File.join(Myreplicator.configs[@export_obj.source_schema]["export_stg_dir"], @export_obj.filename)
     end
 
     ##
@@ -83,14 +83,14 @@ module Myreplicator
     end
 
     def initial_mysqldump_cmd
-      flags = ["create-options", "single-transaction"]       
+      flags = ["create-options", "single-transaction"]
       cmd = ""
       # Mysql - Mysql Export
       if @export_obj.export_to == "destination_db"
         cmd = SqlCommands.mysqldump(:db => @export_obj.source_schema,
                                     :flags => flags,
                                     :filepath => filepath,
-                                    :table_name => @export_obj.table_name)     
+                                    :table_name => @export_obj.table_name)
       else # Other destinations
         cmd = SqlCommands.mysql_export_outfile(:db => @export_obj.source_schema,
                                                :filepath => filepath,
@@ -99,7 +99,7 @@ module Myreplicator
       puts cmd
       return cmd
     end
-    
+
     ##
     # Exports table incrementally, similar to incremental_export method
     # Dumps file in tmp directory specified in myreplicator.yml
@@ -109,11 +109,11 @@ module Myreplicator
 
     def incremental_export_into_outfile metadata
       unless @export_obj.is_running?
-        
+
         if @export_obj.export_type == "incremental"
           max_value = @export_obj.max_value
-          metadata.export_type = "incremental"        
-          @export_obj.update_max_val if @export_obj.max_incremental_value.blank?   
+          metadata.export_type = "incremental"
+          @export_obj.update_max_val if @export_obj.max_incremental_value.blank?
         end
         if (@export_obj.export_type == "all" && @export_obj.export_to == "vertica")
           metadata.export_type = "incremental"
@@ -146,7 +146,7 @@ module Myreplicator
         #Kernel.p options
         cmd = SqlCommands.mysql_export_outfile(options)
         #Kernel.p "===== incremental_export_into_outfile CMD ====="
-        #puts cmd      
+        #puts cmd
         exporting_state_trans
         puts "Exporting..."
         result = execute_export(cmd, metadata)
@@ -174,7 +174,7 @@ module Myreplicator
             puts "diff"
             return true
           end
-  
+
           # check for column's data type
           if compare_datatypes index, vertica_schema, mysql_schema
             puts "diff #{index}"
@@ -184,14 +184,14 @@ module Myreplicator
           index += 1
         end
       end
-      return false      
+      return false
     end
 
     def self.compare_datatypes index, vertica_schema, mysql_schema
       type = Myreplicator::VerticaTypes.convert mysql_schema[index]["data_type"], mysql_schema[index]["column_type"]
       if vertica_schema.rows[index][:data_type].downcase != type.downcase
-        if !(vertica_schema.rows[index][:data_type].include?("timestamp")) && 
-          !(vertica_schema.rows[index][:data_type].include?("decimal")) && 
+        if !(vertica_schema.rows[index][:data_type].include?("timestamp")) &&
+          !(vertica_schema.rows[index][:data_type].include?("decimal")) &&
           !(vertica_schema.rows[index][:data_type].include?("numeric")) &&
           !(vertica_schema.rows[index][:data_type].include?("binary"))
           return true
@@ -200,8 +200,8 @@ module Myreplicator
       end
       return false
     end
-    
-    def self.get_mysql_schema_rows mysql_schema 
+
+    def self.get_mysql_schema_rows mysql_schema
       mysql_schema_simple_form = []
       mysql_schema.each(:as => :hash) do |row|
         mysql_schema_simple_form << row
@@ -215,13 +215,13 @@ module Myreplicator
       mysql_schema = Loader.mysql_table_definition(options)
       vertica_schema = VerticaLoader.destination_table_vertica(options)
 
-      # empty result set from vertica means table does not exist 
-      unless vertica_schema.size > 0 
+      # empty result set from vertica means table does not exist
+      unless vertica_schema.size > 0
         return {:changed => true, :mysql_schema => mysql_schema, :new => true}
       end
       # compare two schemas
-      
-      
+
+
       mysql_schema_2 = get_mysql_schema_rows mysql_schema
       if compare_schemas(vertica_schema, mysql_schema_2)
         result =  {:changed => true, :mysql_schema => mysql_schema, :vertica_schema => vertica_schema,:new => false}
@@ -239,7 +239,7 @@ module Myreplicator
     def check_result result, size
       unless result.nil?
         raise Exceptions::ExportError.new("Export Error\n#{result}") if result.length > 0
-      end     
+      end
     end
 
     ##
@@ -252,7 +252,7 @@ module Myreplicator
 
       # Execute Export command on the source DB server
       result = metadata.ssh.exec!(cmd)
-      
+
       return result
     end
 
@@ -260,13 +260,13 @@ module Myreplicator
     # zips the file on the source DB server
     ##
     def zipfile metadata
-      cmd = "cd #{Myreplicator.configs[@export_obj.source_schema]["ssh_tmp_dir"]}; gzip #{@export_obj.filename}"
+      cmd = "cd #{Myreplicator.configs[@export_obj.source_schema]["export_stg_dir"]}; gzip #{@export_obj.filename}"
 
       puts cmd
 
       zip_result = metadata.ssh.exec!(cmd)
 
-      unless zip_result.nil?        
+      unless zip_result.nil?
         raise Exceptions::ExportError.new("Export Error\n#{zip_result}") if zip_result.length > 0
       end
 
@@ -277,10 +277,10 @@ module Myreplicator
 
     def on_failure_state_trans metadata, state
       metadata.on_failure do |m|
-        update_export(:state => state, 
-                      :export_finished_at => Time.now, 
+        update_export(:state => state,
+                      :export_finished_at => Time.now,
                       :error => metadata.error)
-        begin              
+        begin
           Myreplicator::Loader.cleanup metadata
         rescue Exception => e
           puts e.message
@@ -290,20 +290,20 @@ module Myreplicator
     end
 
     def exporting_state_trans
-      update_export(:state => "exporting", 
-                    :export_started_at => Time.now, 
+      update_export(:state => "exporting",
+                    :export_started_at => Time.now,
                     :exporter_pid => Process.pid)
     end
 
     def on_export_success metadata
       metadata.on_success do |m|
         zipfile(metadata)
-        update_export(:state => "export_completed", 
-                      :export_finished_at => Time.now, 
+        update_export(:state => "export_completed",
+                      :export_finished_at => Time.now,
                       :error => metadata.error)
         metadata.state = "export_completed"
       end
     end
-    
+
   end
 end
