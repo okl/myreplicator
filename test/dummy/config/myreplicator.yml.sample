@@ -1,5 +1,5 @@
 myreplicator:
-  tmp_path: 
+  loader_stg_path: /tmp/myreplicator
   mysqldump: mysqldump
   mysqlimport: mysqlimport
   mysql: mysql

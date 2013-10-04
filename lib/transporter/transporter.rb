@@ -9,11 +9,10 @@ module Myreplicator
       options = args.extract_options!
     end
 
-    def tmp_dir
-      #@tmp_dir ||= File.join(Myreplicator.app_root,"tmp", "myreplicator")
-      @tmp_dir ||= Myreplicator.tmp_path
-      Dir.mkdir(@tmp_dir) unless File.directory?(@tmp_dir)
-      @tmp_dir
+    def loader_stg_path
+      @loader_stg_path ||= Myreplicator.loader_stg_path
+      Dir.mkdir(@loader_stg_path) unless File.directory?(@loader_stg_path)
+      @loader_stg_path
     end
 
     ##
@@ -55,8 +54,8 @@ module Myreplicator
     def self.download export
       #Kernel.p "===== 1 ====="
       #parallel_download(completed_files(export))
-      tmp_dir ||= Myreplicator.tmp_path
-      Dir.mkdir(tmp_dir) unless File.directory?(tmp_dir)
+      loader_stg_path ||= Myreplicator.loader_stg_path
+      Dir.mkdir(loader_stg_path) unless File.directory?(loader_stg_path)
       files = completed_files(export)
       files.each do |f|
         export = f[:export]
@@ -68,8 +67,8 @@ module Myreplicator
                      :file => filename, :export_id => export.id ) do |log|
      
                sftp = export.sftp_to_source
-               json_file = Transporter.remote_path(export, filename) 
-               json_local_path = File.join(tmp_dir,filename)
+               json_file = Transporter.export_path(export, filename) 
+               json_local_path = File.join(loader_stg_path,filename)
                puts "Downloading #{json_file}"
                sftp.download!(json_file, json_local_path)
                metadata = Transporter.metadata_obj(json_local_path)
@@ -79,7 +78,7 @@ module Myreplicator
                  Log.run(:job_type => "transporter", :name => "export_file",
                          :file => dump_file, :export_id => export.id) do |log|
                    puts "Downloading #{dump_file}"
-                   local_dump_file = File.join(tmp_dir, dump_file.split("/").last)
+                   local_dump_file = File.join(loader_stg_path, dump_file.split("/").last)
                    sftp.download!(dump_file, local_dump_file)
                    Transporter.remove!(export, json_file, dump_file)
                    #export.update_attributes!({:state => 'transport_completed'})
@@ -131,8 +130,8 @@ module Myreplicator
                 :file => filename, :export_id => export.id ) do |log|
 
           sftp = export.sftp_to_source
-          json_file = Transporter.remote_path(export, filename) 
-          json_local_path = File.join(tmp_dir,filename)
+          json_file = Transporter.export_path(export, filename) 
+          json_local_path = File.join(loader_stg_path,filename)
           puts "Downloading #{json_file}"
           sftp.download!(json_file, json_local_path)
           metadata = Transporter.metadata_obj(json_local_path)
@@ -142,7 +141,7 @@ module Myreplicator
             Log.run(:job_type => "transporter", :name => "export_file",
                     :file => dump_file, :export_id => export.id) do |log|
               puts "Downloading #{dump_file}"
-              local_dump_file = File.join(tmp_dir, dump_file.split("/").last)
+              local_dump_file = File.join(loader_stg_path, dump_file.split("/").last)
               sftp.download!(dump_file, local_dump_file)
               Transporter.remove!(export, json_file, dump_file)
               #export.update_attributes!({:state => 'transport_completed'})
@@ -234,7 +233,7 @@ module Myreplicator
     ##
     # Returns where path of dump files on remote server 
     ## 
-    def self.remote_path export, filename
+    def self.export_path export, filename
       File.join(Myreplicator.configs[export.source_schema]["ssh_tmp_dir"], filename)
     end
 

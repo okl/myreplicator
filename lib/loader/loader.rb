@@ -2,17 +2,15 @@ require "exporter"
 
 module Myreplicator
   class Loader
-    
+
     @queue = :myreplicator_load # Provided for Resque
-     
-    
+
     def initialize *args
       options = args.extract_options!
     end
-    
-    def self.tmp_dir
-      #@tmp_dir ||= File.join(Myreplicator.app_root,"tmp", "myreplicator")
-      @tmp_dir ||= Myreplicator.tmp_path
+
+    def self.loader_stg_path
+      @loader_stg_path ||= Myreplicator.loader_stg_path
     end
 
     ##
@@ -22,7 +20,7 @@ module Myreplicator
     def self.perform *args
       options = args.extract_options!
       id = options[:id]
-      if id.blank?  
+      if id.blank?
         ActiveRecord::Base.verify_active_connections!
         ActiveRecord::Base.connection.reconnect!
         load # Kick off the load process
@@ -32,12 +30,12 @@ module Myreplicator
         load_id(id)
       end
     end
-    
+
     ##
     # Running loader for 1 export object
     ##
     def load_id id
-      
+
       #Resque.enqueue(Myreplicator::Loader, id)
       #Resque.enqueue(Myreplicator::Export,342)
     end
@@ -51,20 +49,20 @@ module Myreplicator
       initials = []
       incrementals = []
       all_files = Myreplicator::Loader.metadata_files
-      
+
       files_to_metadata = {}
       @redis = Redis.new(:host => Settings[:redis][:host], :port => Settings[:redis][:port])
       @load_set = "myreplicator_load_set"
       @load_hash = "myreplicator_load_hash"
-      
-      # clear out |k,v| of already deleted filed 
+
+      # clear out |k,v| of already deleted filed
       @redis.hgetall(@load_hash).size
       @redis.hgetall(@load_hash).each do |k, v|
         if @redis.hget(@load_hash, k) == '1'
           @redis.hdel(@load_hash, k)
         end
       end
-      
+
       # check if there is any other running loader, if not then reset the load_hash
       cmd = "ps aux | grep 'Processing myreplicator_load'"
       result = `#{cmd} 2>&1`
@@ -73,7 +71,7 @@ module Myreplicator
           @redis.hdel(@load_hash, k)
         end
       end
-      
+
       # making the hash for mapping filepath to metadata object
       all_files.each do |m|
         if Myreplicator::Loader.transfer_completed? m
@@ -86,11 +84,11 @@ module Myreplicator
           # for the fun of commenting: do nothing
         end
       end
-      
+
       # processing the files in "queue"
       while @redis.smembers(@load_set).size > 0
         filepath = @redis.spop(@load_set)
-              
+
         metadata = files_to_metadata[filepath]
         if metadata.blank?
           next
@@ -110,10 +108,10 @@ module Myreplicator
               Myreplicator::Loader.cleanup metadata
             end
             @redis.hset(@load_hash, metadata.filepath, 1)
-          else #transporter not done yet, return the file to @load_set 
+          else #transporter not done yet, return the file to @load_set
             @redis.sadd(@load_set, metadata.filepath)
           end
-          
+
         else #if metadata.export_type == "incremental" # incremental load
           if Myreplicator::Loader.transfer_completed? metadata
             Myreplicator::Log.run(:job_type => "loader",
@@ -129,30 +127,30 @@ module Myreplicator
           end
         end
         sleep(2)
-      end # end while        
+      end # end while
     end
-    
+
     def self.parallel_load procs
       p = Parallelizer.new(:klass => "Myreplicator::Loader")
       procs.each do |proc|
         p.queue << {:params => [], :block => proc}
       end
-      
+
       p.run
     end
 
     ##
     # Loads all new tables concurrently
-    # multiple files 
-    ## 
+    # multiple files
+    ##
     def self.initial_loads initials
       procs = []
 
-      initials.each do |metadata| 
+      initials.each do |metadata|
         procs << Proc.new {
-          Myreplicator::Log.run(:job_type => "loader", 
-                  :name => "#{metadata.export_type}_import", 
-                  :file => metadata.filename, 
+          Myreplicator::Log.run(:job_type => "loader",
+                  :name => "#{metadata.export_type}_import",
+                  :file => metadata.filename,
                   :export_id => metadata.export_id) do |log|
 
             if Myreplicator::Loader.transfer_completed? metadata
@@ -182,12 +180,12 @@ module Myreplicator
       groups.each do |group|
         procs << Proc.new {
           group.each do |metadata|
-            Myreplicator::Log.run(:job_type => "loader", 
-                    :name => "incremental_import", 
-                    :file => metadata.filename, 
+            Myreplicator::Log.run(:job_type => "loader",
+                    :name => "incremental_import",
+                    :file => metadata.filename,
                     :export_id => metadata.export_id) do |log|
-    
-              if Myreplicator::Loader.transfer_completed? metadata            
+
+              if Myreplicator::Loader.transfer_completed? metadata
                 Myreplicator::Loader.incremental_load metadata
                 Myreplicator::Loader.cleanup metadata
               end
@@ -196,16 +194,16 @@ module Myreplicator
           end # group
         }
       end # groups
-      
+
       return procs
     end
 
     ##
-    # Groups all incrementals files for 
+    # Groups all incrementals files for
     # the same table together
     # Returns and array of arrays
-    # NOTE: Each Arrays should be processed in 
-    # the same thread to avoid collision 
+    # NOTE: Each Arrays should be processed in
+    # the same thread to avoid collision
     ##
     def self.group_incrementals incrementals
       groups = [] # array of all grouped incrementals
@@ -215,18 +213,18 @@ module Myreplicator
         incrementals.delete(metadata)
 
         # look for same loads
-        incrementals.each do |md| 
+        incrementals.each do |md|
           if metadata.equals(md)
             group << md
             incrementals.delete(md) # remove from main array
           end
         end
-        
+
         groups << group
       end
       return groups
     end
-    
+
     ##
     # Creates table and loads data
     ##
@@ -237,10 +235,10 @@ module Myreplicator
       #metadata.zipped = false
       filename = metadata.filename
       if filename.split('.').last == 'gz'
-        filepath = metadata.destination_filepath(tmp_dir)
+        filepath = metadata.destination_filepath(loader_stg_path)
         cmd = "gunzip #{filepath}"
         system(cmd)
-        unzip_file = File.join(tmp_dir, filename.split('.')[0..-2].join('.'))
+        unzip_file = File.join(loader_stg_path, filename.split('.')[0..-2].join('.'))
         cmd = Myreplicator::ImportSql.initial_load(:db => exp.destination_schema,
                                          :filepath => unzip_file.to_s)
         puts cmd
@@ -249,14 +247,14 @@ module Myreplicator
         system(cmd2)
       else
         cmd = Myreplicator::ImportSql.initial_load(:db => exp.destination_schema,
-                                         :filepath => metadata.destination_filepath(tmp_dir))
+                                         :filepath => metadata.destination_filepath(loader_stg_path))
         puts cmd
         result = `#{cmd} 2>&1` # execute
       end
-      
+
       unless result.nil?
         if result.size > 0
-          raise Exceptions::LoaderError.new("Initial Load #{metadata.filename} Failed!\n#{result}") 
+          raise Exceptions::LoaderError.new("Initial Load #{metadata.filename} Failed!\n#{result}")
         end
       end
     end
@@ -269,15 +267,15 @@ module Myreplicator
       exp = Myreplicator::Export.find(metadata.export_id)
       #Loader.unzip(metadata.filename)
       #metadata.zipped = false
-      
-      options = {:table_name => exp.table_name, 
+
+      options = {:table_name => exp.table_name,
         :db => exp.destination_schema,
-        :filepath => metadata.destination_filepath(tmp_dir), 
-        :source_schema => exp.source_schema,      
+        :filepath => metadata.destination_filepath(loader_stg_path),
+        :source_schema => exp.source_schema,
         :fields_terminated_by => "\\0",
         :lines_terminated_by => "\\n"}
-      
-      case metadata.export_to 
+
+      case metadata.export_to
       when "vertica"
         Loader.load_to_vertica options, metadata, exp
       when "mysql"
@@ -286,27 +284,27 @@ module Myreplicator
         result = `#{cmd}` # execute
         unless result.nil?
           if result.size > 0
-            raise Exceptions::LoaderError.new("Incremental Load #{metadata.filename} Failed!\n#{result}") 
+            raise Exceptions::LoaderError.new("Incremental Load #{metadata.filename} Failed!\n#{result}")
           end
         end
-      end #case  
+      end #case
     end
 
     ##
     # Load to Vertica
     ##
     def self.load_to_vertica options, metadata, exp
-      options = {:table_name => exp.table_name, 
+      options = {:table_name => exp.table_name,
         :db => ActiveRecord::Base.configurations["vertica"]["database"],
-        :filepath => metadata.destination_filepath(tmp_dir), 
+        :filepath => metadata.destination_filepath(loader_stg_path),
         :source_schema => exp.source_schema, :export_id => metadata.export_id,
         :metadata => metadata
       }
-      
+
       options[:destination_schema] = exp.destination_schema
-      
+
       result = Myreplicator::VerticaLoader.load options
-      
+
       ##TO DO: Handle unsuccessful vertica loads here
 
     end
@@ -336,13 +334,13 @@ module Myreplicator
       e1 = nil
       e2 = nil
       begin
-      FileUtils.rm metadata.metadata_filepath(tmp_dir) # json file
+      FileUtils.rm metadata.metadata_filepath(loader_stg_path) # json file
       rescue Exception => e
         e1 = e
         puts e.message
       end
       begin
-      FileUtils.rm metadata.destination_filepath(tmp_dir) # dump file
+      FileUtils.rm metadata.destination_filepath(loader_stg_path) # dump file
       rescue Exception => e
         e2 = e
         puts e.message
@@ -360,11 +358,11 @@ module Myreplicator
     # Checks if the file exists or already unzipped
     ##
     def self.unzip filename
-      cmd = "cd #{tmp_dir}; gunzip #{filename}"
+      cmd = "cd #{loader_stg_path}; gunzip #{filename}"
       passed = false
-      if File.exist?(File.join(tmp_dir,filename))
+      if File.exist?(File.join(loader_stg_path,filename))
         result = `#{cmd}`
-        unless result.nil? 
+        unless result.nil?
           puts result
           unless result.length > 0
             passed = true
@@ -372,7 +370,7 @@ module Myreplicator
         else
           passed = true
         end
-      elsif File.exist?(File.join(tmp_dir,filename.gsub(".gz","")))
+      elsif File.exist?(File.join(loader_stg_path,filename.gsub(".gz","")))
         puts "File already unzipped"
         passed = true
       end
@@ -382,7 +380,7 @@ module Myreplicator
 
     def self.metadata_files
       files = []
-      Dir.glob(File.join(tmp_dir, "*.json")).each do |json_file|
+      Dir.glob(File.join(loader_stg_path, "*.json")).each do |json_file|
         files << Myreplicator::ExportMetadata.new(:metadata_path => json_file)
       end
       result = []
@@ -399,7 +397,7 @@ module Myreplicator
     ##
     # Clears files that are older than the passed metadata file.
     # Note: This methoded is provided to ensure no old incremental files
-    # ever get loaded after the schema change algorithm has been applied 
+    # ever get loaded after the schema change algorithm has been applied
     ##
     def self.clear_older_files metadata
       files = Loader.metadata_files
@@ -411,18 +409,18 @@ module Myreplicator
         if metadata.export_id == m.export_id
           if max_date > DateTime.strptime(m.export_time)
             Loader.cleanup m if metadata.filepath != m.filepath
-          end 
+          end
         end
-      end     
+      end
     end
 
     def self.mysql_table_definition options
       sql = "SELECT table_schema, table_name, column_name, is_nullable, data_type, column_type, column_key "
       sql += "FROM INFORMATION_SCHEMA.COLUMNS where table_name = '#{options[:table]}' "
       sql += "and table_schema = '#{options[:source_schema]}';"
-      
+
       puts sql
-      
+
       desc = Myreplicator::DB.exec_sql(options[:source_schema], sql)
       puts desc
       return desc

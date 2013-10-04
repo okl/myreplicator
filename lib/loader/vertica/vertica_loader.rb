@@ -1,7 +1,7 @@
 module Myreplicator
   class VerticaLoader
     class << self
-      
+
       def create_table *args
         options = args.extract_options!
         Kernel.p "===== OPTION ====="
@@ -19,17 +19,17 @@ module Myreplicator
       end
 
       def destination_table_vertica options
-        sql = "select column_name, data_type From columns where 
+        sql = "select column_name, data_type From columns where
                  table_name = '#{options[:table]}' AND table_schema = '#{options[:destination_schema]}'"
         puts sql
         result = DB.exec_sql("vertica",sql)
-        return result     
+        return result
       end
 
       ##
       # Schema Change Algorithm
       # Create temp table to load all data
-      # Load data 
+      # Load data
       # Drop table
       # Rename table
       ##
@@ -38,7 +38,7 @@ module Myreplicator
         Kernel.p "+++++++++++++++++ options "
         puts options
         VerticaLoader.create_table({:mysql_schema => options[:mysql_schema],
-                                     :vertica_db => options[:vertica_db], 
+                                     :vertica_db => options[:vertica_db],
                                      :vertica_schema => options[:vertica_schema],
                                      :table => temp_table,
                                      :mysql_table => options[:table]})
@@ -48,10 +48,10 @@ module Myreplicator
         new_options[:file] = options[:filepath]
         new_options[:table] = temp_table
         new_options[:schema] = options[:vertica_schema]
-        
-         
+
+
         vertica_copy new_options
-        
+
         Kernel.p "+++++++++++++++++ new_options "
         puts new_options
         options[:table] = table
@@ -64,24 +64,24 @@ module Myreplicator
         Myreplicator::DB.exec_sql("vertica",sql)
         # rename
         sql = "ALTER TABLE #{options[:vertica_db]}.#{options[:vertica_schema]}.#{temp_table} RENAME TO \"#{options[:table]}\";"
-        
+
         #VerticaDb::Base.connection.execute sql
         Myreplicator::DB.exec_sql("vertica",sql)
         Myreplicator::VerticaUtils.set_grants(grants)
       end
-      
+
       def create_temp_table *args
         options = args.extract_options!
         temp_table_name = "temp_" + options[:table] + DateTime.now.strftime('%Y%m%d_%H%M%S').to_s
 
         VerticaLoader.create_table({:mysql_schema => options[:mysql_schema],
-                                     :vertica_db => options[:vertica_db], 
+                                     :vertica_db => options[:vertica_db],
                                      :vertica_schema => options[:vertica_schema],
                                      :table => temp_table_name,
                                      :mysql_table => options[:table]})
         return temp_table_name
       end
-   
+
       def prepare_options *args
         #options = args.extract_options!.clone
         options = args.extract_options!
@@ -102,16 +102,16 @@ module Myreplicator
                               :line_terminate => ";~~;\n",
                               :enclosed => "#{Myreplicator.configs[options[:source_schema]]['enclosed_by']}")
                               #:enclosed => '\"')
-      # working now but should fix this 
+      # working now but should fix this
         if !vertica_options["vsql"].blank?
           options.reverse_merge!(:vsql => vertica_options["vsql"])
         else
           options.reverse_merge!(:vsql => "/opt/vertica/bin/vsql")
         end
-        
-        return options  
+
+        return options
       end
-      
+
       # Loader::VerticaLoader.load({:schema => "king", :table => "category_overview_data", :file => "tmp/vertica/category_overview_data.tsv", :null_value => "NULL"})
       # check for export_type!
       def load *args
@@ -123,8 +123,8 @@ module Myreplicator
         Kernel.p metadata.export_type
         Kernel.p options
         #options = {:table_name => "actucast_appeal", :destination_schema => "public", :source_schema => "raw_sources"}
-        schema_check = Myreplicator::MysqlExporter.schema_changed?(:table => options[:table_name], 
-                                                     :destination_schema => options[:destination_schema], 
+        schema_check = Myreplicator::MysqlExporter.schema_changed?(:table => options[:table_name],
+                                                     :destination_schema => options[:destination_schema],
                                                      :source_schema => options[:source_schema])
         Kernel.p "===== schema_check ====="
         Kernel.p schema_check
@@ -202,7 +202,7 @@ module Myreplicator
           end
         end
       end
-      
+
       def vertica_copy * args
         options = args.extract_options!
         list_of_nulls =  ["0000-00-00"]
@@ -210,8 +210,8 @@ module Myreplicator
         if prepared_options[:file].blank?
           raise "No input file"
         end
-        
-        process_file(:file => prepared_options[:file], 
+
+        process_file(:file => prepared_options[:file],
                      :list_of_nulls => list_of_nulls,
                      :null_value => prepared_options[:null_value])
 
@@ -219,21 +219,21 @@ module Myreplicator
         puts cmd
         system(cmd)
       end
-        
+
       def get_vsql_copy_command prepared_options
         Kernel.p "===== get_vsql_copy_command prepared_options ====="
         Kernel.p prepared_options
         file_extension = prepared_options[:file].split('.').last
         file_handler = ""
-        file_handler = "GZIP" if file_extension == "gz" 
-        tmp_dir = Myreplicator.tmp_path
-        sql = "COPY #{prepared_options[:schema]}.#{prepared_options[:table]} FROM LOCAL \'#{prepared_options[:file]}\' #{file_handler} DELIMITER E\'#{prepared_options[:delimiter]}\' NULL as \'#{prepared_options[:null_value]}\' ENCLOSED BY E\'#{prepared_options[:enclosed]}\' RECORD TERMINATOR \'#{prepared_options[:line_terminate]}\' EXCEPTIONS '#{tmp_dir}/load_logs/#{prepared_options[:schema]}_#{prepared_options[:table_name]}.log' REJECTED DATA '#{tmp_dir}/rejected_data/#{prepared_options[:schema]}_#{prepared_options[:table_name]}.txt';"
+        file_handler = "GZIP" if file_extension == "gz"
+        loader_stg_path = Myreplicator.loader_stg_path
+        sql = "COPY #{prepared_options[:schema]}.#{prepared_options[:table]} FROM LOCAL \'#{prepared_options[:file]}\' #{file_handler} DELIMITER E\'#{prepared_options[:delimiter]}\' NULL as \'#{prepared_options[:null_value]}\' ENCLOSED BY E\'#{prepared_options[:enclosed]}\' RECORD TERMINATOR \'#{prepared_options[:line_terminate]}\' EXCEPTIONS '#{loader_stg_path}/load_logs/#{prepared_options[:schema]}_#{prepared_options[:table_name]}.log' REJECTED DATA '#{loader_stg_path}/rejected_data/#{prepared_options[:schema]}_#{prepared_options[:table_name]}.txt';"
         cmd = "#{prepared_options[:vsql]} -h #{prepared_options[:host]} -U #{prepared_options[:user]} -w #{prepared_options[:pass]} -d #{prepared_options[:db]} -c \"#{sql}\""
         return cmd
       end
-      
+
       def process_file *args
-        ### replace the null values in the input file 
+        ### replace the null values in the input file
         options = args.extract_options!
         options[:file].blank? ? return : file = options[:file]
         options[:list_of_nulls].blank? ? list_of_nulls = [] : list_of_nulls = options[:list_of_nulls]
@@ -241,7 +241,7 @@ module Myreplicator
         Kernel.p "===== file #{file}====="
         file_extension = file.split('.').last
         Kernel.p "===== file_extension #{file_extension}====="
-        
+
         case file_extension
         when "tsv", "csv"
           process_flat_file(file, list_of_nulls, null_value)
@@ -251,7 +251,7 @@ module Myreplicator
           raise "Un supported file extension"
         end
       end
-      
+
       def replace_null(file, list_of_nulls, null_value = "NULL")
         list_of_nulls.each do | value|
           # special case for NULL MySQL datetime/date type but the column is defined NOT NULL
@@ -267,16 +267,16 @@ module Myreplicator
           end
         end
       end
-      
-      def process_flat_file file, list_of_nulls, null_value 
+
+      def process_flat_file file, list_of_nulls, null_value
         # sed
         replace_null(file, list_of_nulls, null_value)
       end
-      
+
       def process_gzip_file file, list_of_nulls, null_value
         # unzip
-        tmp_dir = Myreplicator.tmp_path
-        temp_file = "#{tmp_dir}/temp_#{file.split('.').first.split('/').last}.txt"
+        loader_stg_path = Myreplicator.loader_stg_path
+        temp_file = "#{loader_stg_path}/temp_#{file.split('.').first.split('/').last}.txt"
         cmd = "gunzip -f #{file} -c > #{temp_file}"
         Kernel.p cmd
         system(cmd)
@@ -294,13 +294,13 @@ module Myreplicator
       def get_mysql_keys mysql_schema_simple_form
         result = []
         mysql_schema_simple_form.each do |col|
-          if col["column_key"] == "PRI" 
+          if col["column_key"] == "PRI"
             result << col["column_name"]
           end
         end
         return result
       end
-      
+
       def get_mysql_none_keys mysql_schema_simple_form
         result = []
         mysql_schema_simple_form.each do |col|
@@ -310,7 +310,7 @@ module Myreplicator
         end
         return result
       end
-      
+
       def get_mysql_inserted_columns mysql_schema_simple_form
         result = []
         mysql_schema_simple_form.each do |col|
@@ -318,7 +318,7 @@ module Myreplicator
         end
         return result
       end
-      
+
       def get_vsql_merge_command options, keys, none_keys, inserted_columns
         Kernel.p "===== Merge Options ====="
         Kernel.p options
@@ -331,7 +331,7 @@ module Myreplicator
         sql+= "ON "
         count = 0
         keys.each do |k|
-          if count < 1 
+          if count < 1
             sql += "source.#{k} = target.#{k} "
           else
             sql += "AND source.#{k} = target.#{k} "
@@ -360,32 +360,32 @@ module Myreplicator
             sql+= "source.#{col}) "
           end
           count += 1
-        end  
-        sql+= "; COMMIT;"  
+        end
+        sql+= "; COMMIT;"
         cmd = "#{prepared_options[:vsql]} -h #{prepared_options[:host]} -U #{prepared_options[:user]} -w #{prepared_options[:pass]} -d #{prepared_options[:db]} -c \"#{sql}\""
-        return cmd    
+        return cmd
       end
-        
+
       def vertica_merge *args
         options = args.extract_options!
         metadata = options[:metadata]
         Kernel.p "===== MERGE metadata ====="
         Kernel.p metadata
-        ops = {:table => options[:table_name], 
-        :destination_schema => options[:destination_schema], 
+        ops = {:table => options[:table_name],
+        :destination_schema => options[:destination_schema],
         :source_schema => options[:source_schema]}
         mysql_schema = Loader.mysql_table_definition(options)
         vertica_schema = VerticaLoader.destination_table_vertica(options)
         mysql_schema_simple_form = MysqlExporter.get_mysql_schema_rows mysql_schema
         # get the column(s) that is(are) used as the primary key
         keys = get_mysql_keys mysql_schema_simple_form
-        # get the non key coluns 
+        # get the non key coluns
         none_keys = get_mysql_none_keys mysql_schema_simple_form
         # get the column to put in the insert part
         inserted_columns = get_mysql_inserted_columns mysql_schema_simple_form
-        #get the vsql merge command 
-        cmd = get_vsql_merge_command options, keys, none_keys, inserted_columns 
-        #execute    
+        #get the vsql merge command
+        cmd = get_vsql_merge_command options, keys, none_keys, inserted_columns
+        #execute
         puts cmd
         begin
           result = `#{cmd} 2>&1`
@@ -412,18 +412,18 @@ module Myreplicator
             end
           end
         rescue Exception => e
-          raise e.message 
+          raise e.message
         ensure
           # place holder
         end
       end
-      
+
       def  clean_up_temp_tables db
         sql = "SELECT table_name FROm v_catalog.tables WHERE table_schema ='#{db}' and table_name LIKE 'temp_%';"
         result = Myreplicator::DB.exec_sql("vertica",sql)
         result.rows.each do |row|
           tb = row[:table_name]
-        
+
           if tb.size > 15
             time_str = tb[(tb.size-15)..(tb.size-1)]
             begin
@@ -439,7 +439,7 @@ module Myreplicator
           end
         end
       end
-      
+
       def get_analyze_constraints *args
         options = args.extract_options!
         exp = Export.find(options[:export_id])
@@ -460,11 +460,11 @@ module Myreplicator
           end
         rescue Exception => e
           puts e.message
-        end  
-        return 0      
+        end
+        return 0
       end
-      
-      
+
+
 =begin
        def create_all_tables db
          tables = Myreplicator::DB.get_tables(db)
@@ -486,4 +486,3 @@ module Myreplicator
     end
   end
 end
-

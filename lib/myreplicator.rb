@@ -3,7 +3,7 @@ require "exporter"
 
 module Myreplicator
   mattr_accessor(:app_root, 
-                 :tmp_path, 
+                 :loader_stg_path, 
                  :mysql, 
                  :mysqldump, 
                  :configs, 
@@ -36,12 +36,11 @@ module Myreplicator
       end        
 
       # Temp directory path
-      if yml["myreplicator"]["tmp_path"].blank?
-        Myreplicator.tmp_path = File.join(Myreplicator.app_root, "tmp", "myreplicator")
+      if yml["myreplicator"]["loader_stg_path"].blank?
+        throw RuntimeError, "myreplicator.loader_stg_path must be configured"        
       else
-        Myreplicator.tmp_path = yml["myreplicator"]["tmp_path"]
+        Myreplicator.loader_stg_path = yml["myreplicator"]["loader_stg_path"]
       end
-
       Myreplicator.configs = yml
     end
 

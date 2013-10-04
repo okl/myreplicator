@@ -14,27 +14,27 @@ Installation
 Configurations
 ---------------------------
 * Create a yaml file called myreplicator.yml under the config folder in your rails app
-* Set the temporary file storage path for myreplicator to use "tmp_path"
 * Database configurations should be stored in database.yml file
 * Database servers defined in myreplicator.yml must be named as they are in database.yml file.
 * Databases that need to be replicated should be marked by adding key  myreplicator: true to the database.yml file.
 * The code/UI uses the database names from database.yml file to connect to the correct source database.
- 
+
 Available configuartions for the engine:
 
-* Myreplicator.app_root       : host rails application root
-* Myreplicator.tmp_path       : location for storing temporary files
-* Myreplicator.mysql          : mysql command
-* Myreplicator.mysqldump      : mysqldump path
-* Myreplicator.configs        : yaml file
-* Myreplicator.auth_required  : engine authentication
-* Myreplicator.authenticated  : Flag for authentication
-* Myreplicator.login_redirect : redirect after authentication
+* Myreplicator.app_root        : host rails application root
+* Myreplicator.loader_stg_path : location for store files
+* Myreplicator.mysql           : mysql command
+* Myreplicator.mysqldump       : mysqldump path
+* Myreplicator.configs         : yaml file
+* Myreplicator.auth_required   : engine authentication
+* Myreplicator.authenticated   : Flag for authentication
+* Myreplicator.login_redirect  : redirect after authentication
 
 Sample Myreplicator Yaml file
 ---------------------------
 	myreplicator:
-	  tmp_path: # use this if you do not want to store files under tmp
+	  loader_stg_path: # you must specify a location to store files as
+	  they await being loaded
 	  mysqldump: mysqldump (command for mysqldump)
 	  mysqlimport: mysqlimport # (command for mysqlimport)
 	  mysql: mysql # (command for mysql)
