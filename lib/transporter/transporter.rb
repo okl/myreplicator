@@ -33,15 +33,15 @@ module Myreplicator
                             :queue => "myreplicator_transporter"
                           })
     end
-    
+
     ##
-    # Connects to all unique database servers 
+    # Connects to all unique database servers
     # downloads export files concurrently from multiple sources
     ##
     def self.transfer
       unique_jobs = Myreplicator::Export.where("active = 1").group("source_schema")
       Kernel.p "===== unique_jobs ====="
-      Kernel.p unique_jobs 
+      Kernel.p unique_jobs
       unique_jobs.each do |export|
         download export
       end
@@ -62,12 +62,12 @@ module Myreplicator
         filename = f[:file]
         ActiveRecord::Base.verify_active_connections!
              ActiveRecord::Base.connection.reconnect!
-     
-             Log.run(:job_type => "transporter", :name => "metadata_file", 
+
+             Log.run(:job_type => "transporter", :name => "metadata_file",
                      :file => filename, :export_id => export.id ) do |log|
-     
+
                sftp = export.sftp_to_source
-               json_file = Transporter.export_path(export, filename) 
+               json_file = Transporter.export_path(export, filename)
                json_local_path = File.join(loader_stg_path,filename)
                puts "Downloading #{json_file}"
                sftp.download!(json_file, json_local_path)
@@ -99,15 +99,15 @@ module Myreplicator
     # Gathers all files that need to be downloaded
     # Gives the queue to parallelizer library to download in parallel
     ##
-    def self.parallel_download files    
+    def self.parallel_download files
       p = Parallelizer.new(:klass => "Myreplicator::Transporter")
-    
+
       files.each do |f|
         puts f[:file]
         p.queue << {:params =>[f[:export], f[:file]], :block => download_file}
       end
 
-      p.run 
+      p.run
     end
 
     ##
@@ -118,19 +118,19 @@ module Myreplicator
     # 3. Gets dump file location from metadata
     # 4. Downloads dump file
     ##
-    def self.download_file    
+    def self.download_file
       proc = Proc.new { |params|
-        export = params[0] 
+        export = params[0]
         filename = params[1]
 
         ActiveRecord::Base.verify_active_connections!
         ActiveRecord::Base.connection.reconnect!
 
-        Log.run(:job_type => "transporter", :name => "metadata_file", 
+        Log.run(:job_type => "transporter", :name => "metadata_file",
                 :file => filename, :export_id => export.id ) do |log|
 
           sftp = export.sftp_to_source
-          json_file = Transporter.export_path(export, filename) 
+          json_file = Transporter.export_path(export, filename)
           json_local_path = File.join(loader_stg_path,filename)
           puts "Downloading #{json_file}"
           sftp.download!(json_file, json_local_path)
@@ -190,7 +190,7 @@ module Myreplicator
         return []
       end
       files = done_files.split("\n")
-      
+
       jobs = Export.where("active = 1 and source_schema = '#{export.source_schema}'")
       #jobs.each do |j|
       #  j.update_attributes!({:state => "transporting"})
@@ -200,7 +200,7 @@ module Myreplicator
         flag = nil
         jobs.each do |job|
           if file.include?(job.table_name)
-            flag = job 
+            flag = job
             #job.update_attributes!({:state => 'transporting'})
           end
         end
@@ -231,8 +231,8 @@ module Myreplicator
     end
 
     ##
-    # Returns where path of dump files on remote server 
-    ## 
+    # Returns where path of dump files on remote server
+    ##
     def self.export_path export, filename
       File.join(Myreplicator.configs[export.source_schema]["export_stg_dir"], filename)
     end
@@ -240,13 +240,14 @@ module Myreplicator
     ##
     # Command for list of done files
     # Grep -s used to supress error messages
-    ## 
+    ##
     def self.get_done_files export
       Kernel.p "===== export ====="
       Kernel.p export
-      cmd = "cd #{Myreplicator.configs[export.source_schema]["export_stg_dir"]}; grep -ls export_completed *.json"
+      cmd = "cd #{Myreplicator.configs[export.source_schema]["export_stg_dir"]}; " +
+        "grep -ls export_completed *.json"
       return cmd
     end
-    
+
   end
 end
