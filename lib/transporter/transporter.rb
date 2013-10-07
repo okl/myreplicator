@@ -71,7 +71,7 @@ module Myreplicator
     ##
     def download export
       log_info "Downloading files for #{export.source_schema}"
-      download_dirpath = loader_stg_path
+      download_dir_path = loader_stg_path
       files = completed_files(export)
       log_info "Files complete for #{export.source_schema}: #{files}"
       files.each do |f|
