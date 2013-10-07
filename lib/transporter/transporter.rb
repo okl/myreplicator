@@ -82,7 +82,7 @@ module Myreplicator
         Log.run(:job_type => "transporter", :name => "metadata_file",
                 :file => filename, :export_id => export.id ) do |log|
           sftp = export.sftp_to_source
-          metadata = read_source_metadata(sftp, filename, download_dir_path)
+          metadata = read_source_metadata(sftp, export, filename, download_dir_path)
           if export_completed?(metadata)
             src_export_path = metadata.export_path
             Log.run(:job_type => "transporter", :name => "export_file",
@@ -115,7 +115,7 @@ module Myreplicator
     # Reads metadata file from the source machine
     # and returns an instantiated object
     ##
-    def read_source_metadata(sftp, filename, download_dir_path)
+    def read_source_metadata(sftp, export, filename, download_dir_path)
 
       json_file = export_path(export, filename)
       json_local_path = File.join(download_dir_path,filename)
