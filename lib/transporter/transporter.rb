@@ -1,4 +1,3 @@
-require "../service"
 require "exporter"
 
 module Myreplicator
