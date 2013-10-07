@@ -57,8 +57,8 @@ module Myreplicator
       end
     end
 
-    def export_stg_dir
-      Myreplicator.configs[export.source_schema]["export_stg_dir"]
+    def export_stg_dir source_schema
+      Myreplicator.configs[source_schema]["export_stg_dir"]
     end
 
 
@@ -182,7 +182,7 @@ module Myreplicator
     # Returns where path of dump files on remote server
     ##
     def export_path export, filename
-      File.join(export_stg_dir, filename)
+      File.join(export_stg_dir(export.source_schema), filename)
     end
 
     private
@@ -192,7 +192,8 @@ module Myreplicator
     # Grep -s used to supress error messages
     ##
     def done_files_cmd export
-      "cd #{export_stg_dir}; grep -ls export_completed *.json"
+      "cd #{export_stg_dir(export.source_schema)}; " +
+        " grep -ls export_completed *.json"
     end
 
   end
