@@ -20,6 +20,7 @@ class Service
     # TODO, have to make this stderr since we can't figure out
     # where the output is going when it's deployed.
     @logger.add(json_outputter)
+    @logger.add(console_outputter)
   end
 
   # def log_debug, log_info, log_warn, etc.
