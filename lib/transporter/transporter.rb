@@ -37,7 +37,6 @@ module Myreplicator
     ##
     def transfer
       unique_jobs = Myreplicator::Export.where("active = 1").group("source_schema")
-      log_info "Unique jobs: #{unique_jobs}"
       unique_jobs.each do |export|
         download export
       end
@@ -73,7 +72,8 @@ module Myreplicator
       log_info "Downloading files for #{export.source_schema}"
       download_dir_path = loader_stg_path
       files = completed_files(export)
-      log_info "Files complete for #{export.source_schema}: #{files}"
+      filenames = files.map{|f| f[:file]}.join(',')
+      log_info "Files complete for #{export.source_schema}: #{filenames}"
       files.each do |f|
         export = f[:export]
         filename = f[:file]
@@ -83,6 +83,7 @@ module Myreplicator
                 :file => filename, :export_id => export.id ) do |log|
           sftp = export.sftp_to_source
           metadata = read_source_metadata(sftp, export, filename, download_dir_path)
+          json_file = export_path(export, filename)
           if export_completed?(metadata)
             src_export_path = metadata.export_path
             Log.run(:job_type => "transporter", :name => "export_file",
