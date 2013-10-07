@@ -1,26 +1,24 @@
+require "../service"
 require "exporter"
 
 module Myreplicator
-  class Transporter
+  class Transporter < Service
 
     @queue = :myreplicator_transporter # Provided for Resque
 
     def initialize *args
       options = args.extract_options!
+      super
     end
 
-    def loader_stg_path
-      @loader_stg_path ||= Myreplicator.loader_stg_path
-      Dir.mkdir(@loader_stg_path) unless File.directory?(@loader_stg_path)
-      @loader_stg_path
-    end
-
-    ##
-    # Main method provided for resque
-    # Reconnection provided for resque workers
-    ##
-    def self.perform
-      transfer # Kick off the load process
+    class << self
+      ##
+      # Main method provided for resque
+      # Reconnection provided for resque workers
+      ##
+      def perform
+        Transporter.new.transfer # Kick off the load process
+      end
     end
 
     ##
@@ -38,186 +36,137 @@ module Myreplicator
     # Connects to all unique database servers
     # downloads export files concurrently from multiple sources
     ##
-    def self.transfer
+    def transfer
       unique_jobs = Myreplicator::Export.where("active = 1").group("source_schema")
-      Kernel.p "===== unique_jobs ====="
-      Kernel.p unique_jobs
+      log_info "Unique jobs: #{unique_jobs}"
       unique_jobs.each do |export|
         download export
       end
     end
 
+    private
+
+
+    def loader_stg_path
+      if @loader_stg_path
+        @loader_stg_path
+      else
+        path = Myreplicator.loader_stg_path
+        Dir.mkdir(path) unless File.directory?(path)
+        @loader_stg_path = path
+        path
+      end
+    end
+
+    def export_stg_dir
+      Myreplicator.configs[export.source_schema]["export_stg_dir"]
+    end
+
+
     ##
     # Connect to server via SSH
-    # Kicks off parallel download
-    ##
-    def self.download export
-      #Kernel.p "===== 1 ====="
-      #parallel_download(completed_files(export))
-      loader_stg_path ||= Myreplicator.loader_stg_path
-      Dir.mkdir(loader_stg_path) unless File.directory?(loader_stg_path)
-      files = completed_files(export)
-      files.each do |f|
-        export = f[:export]
-        filename = f[:file]
-        ActiveRecord::Base.verify_active_connections!
-             ActiveRecord::Base.connection.reconnect!
-
-             Log.run(:job_type => "transporter", :name => "metadata_file",
-                     :file => filename, :export_id => export.id ) do |log|
-
-               sftp = export.sftp_to_source
-               json_file = Transporter.export_path(export, filename)
-               json_local_path = File.join(loader_stg_path,filename)
-               puts "Downloading #{json_file}"
-               sftp.download!(json_file, json_local_path)
-               metadata = Transporter.metadata_obj(json_local_path)
-               dump_file = metadata.export_path
-               puts metadata.state
-               if metadata.state == "export_completed"
-                 Log.run(:job_type => "transporter", :name => "export_file",
-                         :file => dump_file, :export_id => export.id) do |log|
-                   puts "Downloading #{dump_file}"
-                   local_dump_file = File.join(loader_stg_path, dump_file.split("/").last)
-                   sftp.download!(dump_file, local_dump_file)
-                   Transporter.remove!(export, json_file, dump_file)
-                   #export.update_attributes!({:state => 'transport_completed'})
-                   # store back up as well
-                   unless metadata.store_in.blank?
-                     Transporter.backup_files(metadata.backup_path, json_local_path, local_dump_file)
-                   end
-                 end
-               else
-                 # TO DO: remove metadata file of failed export
-                 Transporter.remove!(export, json_file, "")
-               end #if
-             end
-      end
-    end
-
-    ##
-    # Gathers all files that need to be downloaded
-    # Gives the queue to parallelizer library to download in parallel
-    ##
-    def self.parallel_download files
-      p = Parallelizer.new(:klass => "Myreplicator::Transporter")
-
-      files.each do |f|
-        puts f[:file]
-        p.queue << {:params =>[f[:export], f[:file]], :block => download_file}
-      end
-
-      p.run
-    end
-
-    ##
-    # Code block that each thread calls
-    # instance_exec is used to execute under Transporter class
     # 1. Connects via SFTP
     # 2. Downloads metadata file first
     # 3. Gets dump file location from metadata
     # 4. Downloads dump file
     ##
-    def self.download_file
-      proc = Proc.new { |params|
-        export = params[0]
-        filename = params[1]
-
+    def download export
+      log_info "Downloading files for #{export.source_schema}"
+      download_dirpath = loader_stg_path
+      files = completed_files(export)
+      log_info "Files complete for #{export.source_schema}: #{files}"
+      files.each do |f|
+        export = f[:export]
+        filename = f[:file]
         ActiveRecord::Base.verify_active_connections!
         ActiveRecord::Base.connection.reconnect!
-
         Log.run(:job_type => "transporter", :name => "metadata_file",
                 :file => filename, :export_id => export.id ) do |log|
-
           sftp = export.sftp_to_source
-          json_file = Transporter.export_path(export, filename)
-          json_local_path = File.join(loader_stg_path,filename)
-          puts "Downloading #{json_file}"
-          sftp.download!(json_file, json_local_path)
-          metadata = Transporter.metadata_obj(json_local_path)
-          dump_file = metadata.export_path
-          puts metadata.state
-          if metadata.state == "export_completed"
+          metadata = read_source_metadata(sftp, filename, download_dir_path)
+          if export_completed?(metadata)
+            src_export_path = metadata.export_path
             Log.run(:job_type => "transporter", :name => "export_file",
-                    :file => dump_file, :export_id => export.id) do |log|
-              puts "Downloading #{dump_file}"
-              local_dump_file = File.join(loader_stg_path, dump_file.split("/").last)
-              sftp.download!(dump_file, local_dump_file)
-              Transporter.remove!(export, json_file, dump_file)
+                    :file => src_export_path, :export_id => export.id) do |log|
+              log_info "Downloading #{src_export_path}"
+              tgt_export_path = File.join(download_dir_path, src_export_path.split("/").last)
+              sftp.download!(src_export_path, tgt_export_path)
+              # Clean up the file from the export server once the transport is complete
+              remove!(export, json_file, src_export_path)
               #export.update_attributes!({:state => 'transport_completed'})
               # store back up as well
               unless metadata.store_in.blank?
-                Transporter.backup_files(metadata.backup_path, json_local_path, local_dump_file)
+                backup_files(metadata.backup_path, json_local_path, tgt_export_path)
               end
             end
-          end #if
-          #puts "#{Thread.current.to_s}___Exiting download..."
-        end
-      }
+          else
+            log_info "The state of the export is not complete"
+            # TO DO: remove metadata file of failed export
+            remove!(export, json_file, "")
+          end # end else
+        end # end Log.run
+      end # end files.each
     end
 
-    def self.backup_files location, metadata_path, dump_path
+    def export_completed?(metadata)
+      return metadata.state == "export_completed"
+    end
+
+    ##
+    # Reads metadata file from the source machine
+    # and returns an instantiated object
+    ##
+    def read_source_metadata(sftp, filename, download_dir_path)
+
+      json_file = export_path(export, filename)
+      json_local_path = File.join(download_dir_path,filename)
+      log_info "Downloading metadata file #{json_file} to #{json_local_path}"
+      sftp.download!(json_file, json_local_path)
+      return metadata_from_file(json_local_path)
+    end
+
+
+
+    def backup_files location, metadata_path, dump_path
       FileUtils.cp(metadata_path, location)
       FileUtils.cp(dump_path, location)
     end
 
-    ##
-    # Returns true if the file should be deleted
-    ##
-    def self.junk_file? metadata
-      case metadata.state
-      when "failed"
-        return true
-      when "ignored"
-        return true
-      end
-      return false
-    end
-
-    def self.remove! export, json_file, dump_file
+    def remove! export, json_file, dump_file
       ssh = export.ssh_to_source
-      puts "rm #{json_file} #{dump_file}"
+      log_info "rm #{json_file} #{dump_file}"
       ssh.exec!("rm #{json_file} #{dump_file}")
     end
 
     ##
     # Gets all files ready to be exported from server
     ##
-    def self.completed_files export
+    def completed_files export
       ssh = export.ssh_to_source
-      done_files = ssh.exec!(get_done_files(export))
+      done_files = ssh.exec!(done_files_cmd(export))
       if done_files.blank?
         return []
-      end
-      files = done_files.split("\n")
-
-      jobs = Export.where("active = 1 and source_schema = '#{export.source_schema}'")
-      #jobs.each do |j|
-      #  j.update_attributes!({:state => "transporting"})
-      #end
-      result = []
-      files.each do |file|
-        flag = nil
-        jobs.each do |job|
-          if file.include?(job.table_name)
-            flag = job
-            #job.update_attributes!({:state => 'transporting'})
+      else
+        files = done_files.split("\n")
+        jobs = Export.where("active = 1 and source_schema = '#{export.source_schema}'")
+        result = []
+        files.each do |file|
+          flag = nil
+          jobs.each do |job|
+            if file.include?(job.table_name)
+              flag = job
+              #job.update_attributes!({:state => 'transporting'})
+            end
           end
-        end
-        if flag
-          result << {:file => file, :export => flag}
-        end
-      end
-      Kernel.p "===== done_files ====="
-      Kernel.p result
-      return result
+          if flag
+            result << {:file => file, :export => flag}
+          end
+        end # end files.each
+        return result
+      end# end else
+    end # end completed_files
 
-      #Kernel.p "===== done_files ====="
-      #Kernel.p files
-      #return files
-    end
-
-    def self.metadata_obj json_path
+    def metadata_from_file json_path
       metadata = ExportMetadata.new(:metadata_path => json_path)
       return metadata
     end
@@ -225,28 +174,26 @@ module Myreplicator
     ##
     # Reads metadata file for the export path
     ##
-    def self.get_dump_path json_path, metadata = nil
-      metadata = Transporter.metadata_obj(json_path) if metadata.nil?
+    def get_dump_path json_path, metadata = nil
+      metadata = metadata_from_file(json_path) if metadata.nil?
       return metadata.export_path
     end
 
     ##
     # Returns where path of dump files on remote server
     ##
-    def self.export_path export, filename
-      File.join(Myreplicator.configs[export.source_schema]["export_stg_dir"], filename)
+    def export_path export, filename
+      File.join(export_stg_dir, filename)
     end
+
+    private
 
     ##
     # Command for list of done files
     # Grep -s used to supress error messages
     ##
-    def self.get_done_files export
-      Kernel.p "===== export ====="
-      Kernel.p export
-      cmd = "cd #{Myreplicator.configs[export.source_schema]["export_stg_dir"]}; " +
-        "grep -ls export_completed *.json"
-      return cmd
+    def done_files_cmd export
+      "cd #{export_stg_dir}; grep -ls export_completed *.json"
     end
 
   end

@@ -130,15 +130,6 @@ module Myreplicator
       end # end while
     end
 
-    def self.parallel_load procs
-      p = Parallelizer.new(:klass => "Myreplicator::Loader")
-      procs.each do |proc|
-        p.queue << {:params => [], :block => proc}
-      end
-
-      p.run
-    end
-
     ##
     # Loads all new tables concurrently
     # multiple files

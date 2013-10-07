@@ -3,6 +3,7 @@ module Myreplicator
 
     def initialize *args
       options = args.extract_options!
+      super
     end
 
     ##
