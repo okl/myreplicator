@@ -1,11 +1,11 @@
 Myreplicator::Engine.routes.draw do
   resources :exports
   root :to => "home#index"
-  match '/export_errors', :to => "home#export_errors", :as => 'export_errors'
-  match '/transport_errors', :to => "home#transport_errors", :as => 'transport_errors'
-  match '/load_errors', :to => "home#load_errors", :as => 'load_errors'
-  match '/kill/:id', :to => 'home#kill', :as => 'kill'
-  match '/search', :to => "exports#search"
+  get '/export_errors', :to => "home#export_errors", :as => 'export_errors'
+  get '/transport_errors', :to => "home#transport_errors", :as => 'transport_errors'
+  get '/load_errors', :to => "home#load_errors", :as => 'load_errors'
+  get '/kill/:id', :to => 'home#kill', :as => 'kill'
+  get '/search', :to => "exports#search"
   
   resources :home do
     get :pause, :on => :collection
